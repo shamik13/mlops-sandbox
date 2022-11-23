@@ -1,0 +1,71 @@
+# Creating MLflow deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-deployment
+  template:
+    metadata:
+      labels:
+        app: mlflow-deployment
+    spec:
+      containers:
+      - name: mlflow-deployment
+        image: mlflow:v1
+        imagePullPolicy: IfNotPresent
+        args:
+        - --host=0.0.0.0
+        - --port=5000
+        - --backend-store-uri=postgresql://mlflow_user:mlflow_pwd@mlflow-postgres-service.mlflow.svc.cluster.local/mlflow_db
+        # - --serve-artifacts
+        # - --artifacts-destination=http://mlflow-minio.local/
+        - --default-artifact-root=s3://mlflow/
+        - --workers=2
+        env:
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: http://mlflow-minio-service.mlflow.svc.cluster.local:9000 #http://mlflow-minio.local/
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        ports:
+        - name: http
+          containerPort: 5000
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-service
+spec:
+  type: NodePort
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    app: mlflow-deployment
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: mlflow.mlops-sandbox.com
+    http:
+      paths:
+        - backend:
+            service:
+              name: mlflow-service
+              port:
+                number: 5000
+          path: /
+          pathType: Prefix
